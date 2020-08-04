@@ -1,0 +1,312 @@
+---
+title: "Analisa Data Covid-19 di Provinsi Jawa Barat"
+author: "Roby"
+date: "8/3/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+library(httr)
+library(hrbrthemes)
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(tidyr)
+
+Optional: use this if you got warning messages `font family not found in your database`
+library(extrafont)
+-->> also this: font_import()
+quit and re-open your session
+
+## Access the API from covid.go.id for the province of West Java
+
+```{r}
+resp <- GET("https://data.covid19.go.id/public/api/prov_detail_JAWA_BARAT.json")
+```
+
+## Extract the response content
+
+```{r}
+cov_jabar_raw <- content(resp, as = "parsed", simplifyVector = TRUE)
+```
+
+## Check component name
+
+```{r}
+names(cov_id_raw)
+```
+
+```{r}
+head(cov_jabar_raw)
+```
+
+### What is the total number of COVID-19 cases in West Java?
+
+```{r}
+cov_jabar_raw$kasus_total
+```
+
+### What percentage of deaths due to COVID-19 in West Java?
+
+```{r}
+cov_jabar_raw$meninggal_persen
+```
+
+### What is the percentage recovery rate of COVID-19 in West Java?
+
+```{r}
+cov_jabar_raw$sembuh_persen
+```
+
+## Save the history of the covid-19 development of West Java province into a new variable
+
+```{r}
+cov_jabar <- cov_jabar_raw$list_perkembangan
+```
+
+```{r}
+str(cov_jabar)
+```
+```{r}
+head(cov_jabar)
+```
+
+## Data Manipulation and save into `new_cov_jabar`
+
+1. Deleting columns "DIRAWAT_OR_ISOLASI" and "ACCUMULASI_DIRAWAT_OR_ISOLASI"
+2. Delete all columns that contain cumulative values
+3. Changing the name of the column `KASUS` to `kasus_baru`
+4. Change the format of writing the following column to lowercase
+     - column `MENINGGAL`
+     - column `SEMBUH`
+5. Correcting data in the date column
+
+```{r}
+new_cov_jabar <- 
+  cov_jabar %>%
+  select(-contains("DIRAWAT_OR_ISOLASI")) %>%
+  select(-starts_with("AKUMULASI")) %>% 
+  rename(
+    kasus_baru = KASUS,
+    meninggal = MENINGGAL,
+    sembuh = SEMBUH
+  ) %>% 
+  mutate(
+    tanggal = as.Date.POSIXct(tanggal/1000, origin = "1970-01-01"),
+    tanggal = as.Date(tanggal)
+  )
+
+str(new_cov_jabar)
+```
+## Data Visualization
+
+```{r}
+ggplot(new_cov_jabar, aes(tanggal, kasus_baru)) +
+  geom_col(fill = "salmon") +
+  labs(
+    x = NULL,
+    y = "Jumlah kasus",
+    title = "Kasus Harian Positif COVID-19 di Jawa Barat",
+    subtitle = "Terjadi pelonjakan kasus di awal bulan Juli akibat klaster Secapa AD Bandung",
+    caption = "Sumber data: covid.go.id"
+  ) +
+  theme_ipsum(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+  ) +
+  theme(plot.title.position = "plot")
+```
+
+```{r}
+ggplot(new_cov_jabar, aes(tanggal, sembuh)) +
+  geom_col(fill = "olivedrab2") +
+  labs(
+    x = NULL,
+    y = "Jumlah kasus",
+    title = "Kasus Harian Sembuh COVID-19 di Jawa Barat",
+    subtitle = "Terjadi pelonjakan kasus di awal bulan Juli akibat klaster Secapa AD Bandung",
+    caption = "Sumber data: covid.19.go.id"
+    ) +
+  theme_ipsum(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+    ) +
+  theme(plot.title.position = "plot")
+```
+
+```{r}
+ggplot(new_cov_jabar, aes(tanggal, meninggal)) +
+  geom_col(fill = "darkslategray4") +
+  labs(
+    x = NULL,
+    y = "Jumlah kasus",
+    title = "Kasus Harian Meninggal Akibat COVID-19 di Jawa Barat",
+    caption = "Sumber data: covid.19.go.id"
+  ) +
+  theme_ipsum(
+    base_size = 13, 
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+  ) +
+  theme(plot.title.position = "plot")
+```
+
+## How is the case developing over a weekly period?
+
+
+```{r}
+cov_jabar_pekanan <- new_cov_jabar %>% 
+  count(
+    tahun = year(tanggal),
+    pekan_ke = week(tanggal),
+    wt = kasus_baru,
+    name = "jumlah"
+  )
+
+glimpse(cov_jabar_pekanan)
+```
+
+### Is this week better than last week?
+
+1. Create a new column that contains the number of new cases in the previous week. This column is named `jumlah_pekanlalu`
+2. Replace the NA value in the `jumlah_pekanlalu` with the value `0`
+3. Make a comparison between the column `jumlah` with the column `jumlah_pekanlalu`. The results of this comparison are stored in a new column with the name `lebih_baik`, the value is `TRUE`if the number of new cases this week is lower than the number of cases last week
+
+```{r}
+cov_jabar_pekanan <-
+  cov_jabar_pekanan %>% 
+  mutate(
+    jumlah_pekanlalu = dplyr::lag(jumlah, 1),
+    jumlah_pekanlalu = ifelse(is.na(jumlah_pekanlalu), 0, jumlah_pekanlalu),
+    lebih_baik = jumlah < jumlah_pekanlalu
+  )
+
+glimpse(cov_jabar_pekanan)
+```
+
+## Make a Bar Chart
+
+```{r}
+ggplot(cov_jabar_pekanan, aes(pekan_ke, jumlah, fill = lebih_baik)) +
+  geom_col(show.legend = FALSE) +
+  scale_x_continuous(breaks = 9:31, expand = c(0, 0)) +
+  scale_fill_manual(values = c("TRUE" = "seagreen3", "FALSE" = "salmon")) +
+  labs(
+    x = NULL,
+    y = "Jumlah kasus",
+    title = "Kasus Pekanan Positif COVID-19 di Jawa Barat",
+    subtitle = "Kolom hijau menunjukan penambahan kasus baru lebih sedikit dibandingkan satu pekan sebelumnya",
+    caption = "Sumber data: covid.19.go.id"
+    ) +
+  theme_ipsum(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+    ) +
+  theme(plot.title.position = "plot")
+```
+
+## Until now, how many cases are still active? Active in the sense of being treated or isolated.
+
+```{r}
+cov_jabar_akumulasi <- 
+  new_cov_jabar %>% 
+  transmute(
+    tanggal,
+    akumulasi_aktif = cumsum(kasus_baru) - cumsum(sembuh) - cumsum(meninggal),
+    akumulasi_sembuh = cumsum(sembuh),
+    akumulasi_meninggal = cumsum(meninggal)
+  )
+
+tail(cov_jabar_akumulasi)
+```
+
+## Make a Line Chart
+
+```{r}
+ggplot(data = cov_jabar_akumulasi, aes(x = tanggal, y = akumulasi_aktif)) +
+  geom_line()
+```
+
+## Pivoting the `cov_jabar_akumulasi` data, then creating a `geom_line()` layer using aesthetic colors
+
+
+```{r}
+dim(cov_jabar_akumulasi)
+
+cov_jabar_akumulasi_pivot <- 
+  cov_jabar_akumulasi %>% 
+  gather(
+    key = "kategori",
+    value = "jumlah",
+    -tanggal
+  ) %>% 
+  mutate(
+    kategori = sub(pattern = "akumulasi_", replacement = "", kategori)
+  )
+
+dim(cov_jabar_akumulasi_pivot)
+
+glimpse(cov_jabar_akumulasi_pivot)
+```
+
+### Since `tidyr` version 1.0.0, you are advised to use the `pivot_longer()` function instead of `gather()` and `pivot_wider()` instead of `spread()`. `pivot_longer()` and `pivot_wider()` have more complete features than `gather()` and `spread()`. The transformation process of `cov_jabar_akumulasi` into `cov_jabar_akumulasi_pivot` can be done using `pivot_longer()` as follows:
+
+```{r}
+cov_jabar_akumulasi_pivot2 <- 
+  cov_jabar_akumulasi %>% 
+  pivot_longer(
+    cols = -tanggal,
+    names_to = "kategori",
+    names_prefix = "akumulasi",
+    values_to = "jumlah"
+  )
+
+dim(cov_jabar_akumulasi_pivot)
+
+glimpse(cov_jabar_akumulasi_pivot)
+```
+
+## Make a comparison chart between the accumulation of active cases `kasus_aktif`, cured cases `kasus_sembuh` and death cases `kasus_meninggal`
+
+```{r}
+ggplot(cov_jabar_akumulasi_pivot, aes(tanggal, jumlah, colour = (kategori))) +
+  geom_line(size = 0.9) +
+  scale_y_continuous(sec.axis = dup_axis(name = NULL)) +
+  scale_colour_manual(
+    values = c(
+      "aktif" = "salmon",
+      "meninggal" = "darkslategray4",
+      "sembuh" = "olivedrab2"
+      ),
+    labels = c("Aktif", "Meninggal", "Sembuh")
+    ) +
+  labs(
+    x = NULL,
+    y = "Jumlah kasus akumulasi",
+    colour = NULL,
+    title = "Dinamika Kasus COVID-19 di Jawa Barat",
+    caption = "Sumber data: covid.19.go.id"
+    ) +
+  theme_ipsum(
+    base_size = 13,
+    plot_title_size = 21,
+    grid = "Y",
+    ticks = TRUE
+    ) +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "top"
+    )
+```
+
+
+
+
