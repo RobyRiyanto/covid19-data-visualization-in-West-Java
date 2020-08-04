@@ -7,5 +7,5 @@ Utilization of public data disclosure and data analysis techniques to understand
 
 ## Source
 
-[Indonesia Goverment](https://https://covid19.go.id/)
+[Indonesia Goverment](https://covid19.go.id/)
 
