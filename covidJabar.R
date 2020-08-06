@@ -12,7 +12,7 @@ resp <- GET("https://data.covid19.go.id/public/api/prov_detail_JAWA_BARAT.json")
 cov_jabar_raw <- content(resp, as = "parsed", simplifyVector = TRUE)
 
 ## Check component name
-names(cov_id_raw)
+names(cov_jabar_raw)
 
 head(cov_jabar_raw)
 
