@@ -34,7 +34,7 @@ cov_jabar_raw <- content(resp, as = "parsed", simplifyVector = TRUE)
 ## Check component name
 
 ```{r}
-names(cov_id_raw)
+names(cov_jabar_raw)
 ```
 
 ```{r}
